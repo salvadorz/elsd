@@ -6,6 +6,7 @@ set -e
 set -u
 
 NUMFILES=10
+WRITER=writer.sh
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
 username=$(cat conf/username.txt)
@@ -37,6 +38,7 @@ assignment=`cat ../conf/assignment.txt`
 if [ $assignment != 'assignment1' ]
 then
 	mkdir -p "$WRITEDIR"
+	WRITER=writer
 
 	#The WRITEDIR is in quotes because if the directory path consists of spaces, then variable substitution will consider it as multiple argument.
 	#The quotes signify that the entire string in WRITEDIR is a single string.
@@ -47,14 +49,15 @@ then
 	else
 		exit 1
 	fi
+
+    #echo "Removing the old writer utility and compiling as a native application"
+    make clean
+    make
 fi
-#echo "Removing the old writer utility and compiling as a native application"
-#make clean
-#make
 
 for i in $( seq 1 $NUMFILES)
 do
-	./writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	./${WRITER} "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
 OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")

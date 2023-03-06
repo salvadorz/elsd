@@ -15,7 +15,7 @@ then
     filename=$1
     dir_name=$(dirname $1)
     filename="${filename##*/}"
-    #echo "filename:$filename"
+
 
 else
     echo "-First parameter needs to be a directory where to write the file."
@@ -34,19 +34,16 @@ fi
 # Creates a new file with name and path writefile with content writestr, overwriting any existing file and creating the path if it doesn’t exist. 
 if [[ ! -d $dir_name ]]
 then
-    #echo "Creating the dir $dir_name"
     mkdir -p $dir_name
 fi
 
 if [ $? -eq 0 ] && ([ -n $filename ] && [ ! -e $1 ])
 then
-    #echo "creating the file $filename"
     touch $1
 fi
 
 if [ -d $dir_name ] && ([ -n $filename ] && [ -w $1 ])
 then
-    #echo "Writing to the file $filename..."
     echo $writestr > $1
 else
     echo "File doesn't exist or does not have write permissions."
