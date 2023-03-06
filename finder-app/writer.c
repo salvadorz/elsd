@@ -66,14 +66,17 @@ int main(int argc, char **argv) {
     syslog(LOG_INFO, "Usage: %s [FILENAME_PATH] [STRING_TO_WRITE]\n", argv[0]);
     syslog(LOG_ERR, "Invalid Number of Arguments, provided:%d\n", argc - 1);
     return_val = EPERM;
-  } else if (MAX_ARGC < argc) {
+  }
+  else if (MAX_ARGC < argc) {
     syslog(LOG_ERR, "Argument list too long, provided:%d\n", argc - 1);
     return_val = E2BIG;
-  } else if (NULL == argv[writestr]) /* No need to check argv[writefile] */
+  }
+  else if (NULL == argv[writestr]) /* No need to check argv[writefile] */
   {
     syslog(LOG_ERR, "Invalid argument(s), provided:%d\n", argc - 1);
     return_val = EINVAL;
-  } else if (EXIT_SUCCESS == return_val) {
+  }
+  else if (EXIT_SUCCESS == return_val) {
     /** 1.3
      * Creates a new file with name writefile with content writestr
      * assume the directory is created by the caller.
@@ -83,7 +86,8 @@ int main(int argc, char **argv) {
       syslog(LOG_ERR, "Failed to open the file %s. %s", argv[writefile],
              strerror(errno));
       return_val = errno;
-    } else {
+    }
+    else {
 
       /** 2.2 LOG_DEBUG
        * Use the syslog capability to write a message “Writing <string> to
