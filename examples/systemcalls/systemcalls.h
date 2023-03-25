@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <stdio.h> // fprintf, std_stream
 #include <stdbool.h>
 #include <stdarg.h>
 

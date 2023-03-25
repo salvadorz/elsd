@@ -1,5 +1,12 @@
 #include "systemcalls.h"
 
+#include <errno.h>   //errno
+#include <fcntl.h>   // open
+#include <stdlib.h>  //system()
+#include <string.h>  //strerror
+#include <sys/wait.h>//waitpid
+#include <unistd.h> /* fork, std stream*/
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -17,7 +24,14 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+    bool return_val = false;
+    if (0 != system(cmd)) {
+      fprintf(stderr, "Error %s", strerror(errno));
+    }
+    else
+      return_val = true;
+
+    return return_val;
 }
 
 /**
@@ -47,7 +61,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 /*
  * TODO:
@@ -59,9 +73,44 @@ bool do_exec(int count, ...)
  *
 */
 
+    bool return_val = false;
+    pid_t pid = fork();
+    if (-1 == pid) {
+      fprintf(stderr, "Error creating  the child process %s\n",
+              strerror(errno));
+    }
+    else if (0 == pid) {
+      printf("Child process <%d> with command %s\n", getpid(), command[0]);
+      int ret = execv(command[0], command);
+
+      if (-1 == ret) {
+        perror("perror -execv");
+        exit(EXIT_FAILURE);
+      }
+      printf("Never reach, running %s\n", command[0]);
+    }
+    else {
+      int wstatus;
+      do {
+        if (-1 == waitpid(pid, &wstatus, 0)) {
+          fprintf(stderr, "Error waitpid %s\n", strerror(errno));
+        }
+        else if ((WIFEXITED(wstatus)) && /*Normal termination and Exited with Success*/
+                   (WEXITSTATUS(wstatus) == EXIT_SUCCESS)) {
+
+          printf("Child process <%d> exited status %d\n", pid,
+                 WEXITSTATUS(wstatus));
+          return_val = true;
+        } else {
+          printf("Normal Termination:%d, But returned Failure exec:%d\n", WIFEXITED(wstatus), WEXITSTATUS(wstatus));
+        }
+
+      } while (!WIFEXITED(wstatus));
+    }
+
     va_end(args);
 
-    return true;
+    return return_val;
 }
 
 /**
@@ -82,7 +131,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 
 /*
@@ -93,7 +142,46 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
+    bool return_val = false;
+
+    pid_t pid = fork();
+    if (-1 == pid) {
+      fprintf(stderr, "Error creating  the child process %s\n",
+              strerror(errno));
+    } else if (0 == pid) {
+      int fd = open(outputfile, O_WRONLY | O_CREAT, 0640);
+
+      printf("Child process <%d>\n", getpid());
+
+      // Duplicate the FD in order to have it on the exec
+      if (-1 == dup2(fd, STDOUT_FILENO)) {
+        perror("perror -dup2");
+      }
+      close(fd);
+      if (-1 == execv(command[0], command)) {
+        perror("perror -execv");
+        exit(EXIT_FAILURE);
+      }
+      printf("Never reach, running %s\n", command[0]);
+    } else {
+      int wstatus;
+
+      do {
+        if (-1 == waitpid(pid, &wstatus, 0)) {
+          fprintf(stderr, "Error waitpid %s\n", strerror(errno));
+        }
+        else if ((WIFEXITED(wstatus)) && //If exited normally and with Success
+                   (WEXITSTATUS(wstatus) == EXIT_SUCCESS)) {
+
+          printf("Child process <%d> with command %s exited status %d\n", pid, command[0],
+                 WEXITSTATUS(wstatus));
+          return_val = true;
+        }
+
+      } while (!WIFEXITED(wstatus));
+    }
+
     va_end(args);
 
-    return true;
+    return return_val;
 }
