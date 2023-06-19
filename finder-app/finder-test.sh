@@ -5,11 +5,21 @@
 set -e
 set -u
 
+HW=(`uname -i`)
+if [[ $HW == x86* ]]; then
+CONF="conf"
+else
+CONF="/etc/finder-app/conf"
+fi
+
 NUMFILES=10
 WRITER=writer.sh
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
+username=$(cat ${CONF}/username.txt)
+dirpath=$(dirname $0)
+# write a file with output of the finder command to
+output_file=/tmp/assignment4-result.txt
 
 if [ $# -lt 3 ]
 then
@@ -33,7 +43,7 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
-assignment=`cat conf/assignment.txt`
+assignment=`cat ${CONF}/assignment.txt`
 
 if [ $assignment != 'assignment1' ]
 then
@@ -59,16 +69,16 @@ fi
 
 for i in $( seq 1 $NUMFILES)
 do
-	./${WRITER} "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	${dirpath}/${WRITER} "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+OUTPUTSTRING=$(${dirpath}/finder.sh "$WRITEDIR" "$WRITESTR")
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
 
 set +e
-echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
+echo ${OUTPUTSTRING} | grep "${MATCHSTR}" >> ${output_file}
 if [ $? -eq 0 ]; then
 	echo "success"
 	exit 0

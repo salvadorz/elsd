@@ -20,4 +20,4 @@ $(TARGET) : $(OBJS)
 	$(CC) $(CFLAGS) $(INCLUDES) $(OBJS) -o $(TARGET) $(LDFLAGS)
 
 clean:
-	-rm -f *.o $(TARGET) *.elf *.map
+	$(RM) *.o $(TARGET) *.elf *.map
