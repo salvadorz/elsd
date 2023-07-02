@@ -5,7 +5,7 @@
 set -e
 set -u
 
-HW=(`uname -i`)
+HW=`uname -i`
 if [[ $HW == x86* ]]; then
 CONF="conf"
 else
