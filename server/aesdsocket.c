@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
   /**
    * Setup syslog logging with process name using the LOG_USER facility.
    */
-  // openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
+   openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
 
   /** 1.2
    * -d argument which runs the aesdsocket application as a daemon.
@@ -369,7 +369,7 @@ int main(int argc, char **argv) {
   }
   remove(SOCKET_DATA);
   fprintf(stderr, "Ending aesdsocket from main with code %d...\n", return_val);
-  // closelog();
+  closelog();
 
   return return_val;
 }
