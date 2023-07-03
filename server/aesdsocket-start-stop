@@ -1,0 +1,24 @@
+#!/bin/sh
+# Author: Salvador Zendejas
+
+# -S Start
+# -n process name 
+# -a specify path
+
+process_name="aesdsocket"
+
+case "$1" in
+    start)
+        echo "Starting process"
+        start-stop-daemon -S -n ${process_name} -a /usr/bin/${process_name} -- -d
+        ;;
+    stop)
+        echo "Stopping process with SIGTERM"
+        start-stop-daemon -K -n ${process_name}
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+esac
+
+exit 0

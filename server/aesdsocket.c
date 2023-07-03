@@ -216,6 +216,28 @@ int socket_binding(addrinfo_handle_t res) {
   return sckt_fd;
 }
 
+int static socket_daemonize() {
+  int exit_ok = EXIT_SUCCESS;
+  // Create a SID for child
+  if (SOCKET_ERROR == setsid())
+    exit_ok = EXIT_FAILURE;
+
+  if ((EXIT_SUCCESS == exit_ok) && (SOCKET_ERROR == (chdir("/"))))
+    exit_ok = EXIT_FAILURE;
+
+  if (EXIT_SUCCESS == exit_ok) {
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    open("/dev/null", O_RDWR);
+    dup(0);
+    dup(0);
+  }
+
+  return exit_ok;
+}
+
 int socket_start(bool daemon) {
   int exec_ok = EXIT_SUCCESS;
 
@@ -288,7 +310,10 @@ int socket_start(bool daemon) {
       // end normally
       printf("Child process <%d> created\n", pid);
       return exec_ok;
-
+    } else {
+      // daemon
+      if (EXIT_SUCCESS != socket_daemonize())
+        socket_cleanup(EXIT_FAILURE);
     }
   }
 
