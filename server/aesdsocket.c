@@ -308,7 +308,7 @@ int socket_start(bool daemon) {
       socket_cleanup(exec_ok);
     } else if (0 != pid) { // parent
       // end normally
-      printf("Child process <%d> created\n", pid);
+      printf("Daemon process <%d> created\n", pid);
       return exec_ok;
     } else {
       // daemon
@@ -387,14 +387,19 @@ int main(int argc, char **argv) {
     return_val = socket_start(true);
 
   } else if ((SCKT_NO_ARGS == argc) && (EXIT_SUCCESS == return_val)) {
-    fprintf(stderr, "Starting aesdsocket as normal process...\n");
+    fprintf(stderr, "Starting %s as normal process...\n", basename(argv[0]));
 
     sig_handler_reg();
     return_val = socket_start(false);
   }
   remove(SOCKET_DATA);
-  fprintf(stderr, "Ending aesdsocket from main with code %d...\n", return_val);
-  closelog();
+  fprintf(stderr, "Ending %s from main with code %d....\n", basename(argv[0]),
+          return_val);
+
+  if (TRUE == sig_exit) {
+    fprintf(stderr, "closing log\n");
+    closelog();
+  }
 
   return return_val;
 }

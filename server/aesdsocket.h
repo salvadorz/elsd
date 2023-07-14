@@ -1,6 +1,7 @@
 #include <arpa/inet.h> /*inet_ntop*/
 #include <errno.h>
 #include <fcntl.h>      /*open*/
+#include <libgen.h>     /*basename*/
 #include <netdb.h>      /*addrinfo*/
 #include <signal.h>     /*sigaction, sigemptyset*/
 #include <stdbool.h>    /*bool*/
