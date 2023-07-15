@@ -6,9 +6,12 @@ endif
 
 #CROSS_COMPILE = aarch64-none-linux-gnu-
 ifdef CROSS_COMPILE
-	CC := $(CROSS_COMPILE)gcc
-	CFLAGS = -g -Wall -Wextra -pedantic
+	CC ?= $(CROSS_COMPILE)gcc
+	CFLAGS ?= -g -Wall -Wextra
 endif
+
+LIBS ?= -lpthread -lrt
+LDFLAGS ?= $(LIBS)
 
 SRC := aesdsocket.c
 TARGET = aesdsocket

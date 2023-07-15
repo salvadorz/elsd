@@ -3,6 +3,7 @@
 #include <fcntl.h>      /*open*/
 #include <libgen.h>     /*basename*/
 #include <netdb.h>      /*addrinfo*/
+#include <pthread.h>    /*pthread_mutex_t */
 #include <signal.h>     /*sigaction, sigemptyset*/
 #include <stdbool.h>    /*bool*/
 #include <stdio.h>      /*streams> fopen, fputs, fseek*/
@@ -12,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/wait.h> /* waitpid */
 #include <syslog.h>   /* system logs*/
+#include <time.h>
 #include <unistd.h>   /* close, fork*/
 
 #define SOCKET_DATA ("/var/tmp/aesdsocketdata")
@@ -26,6 +28,15 @@
 typedef struct addrinfo *addrinfo_handle_t;
 
 typedef enum fd_reg_e { fd_sockt = 0, fd_cnctn, FD_MAX } fd_reg_t;
+
+#define SLIST_FOREACH_SAFE(var, head, field, tvar)                             \
+  for ((var) = SLIST_FIRST((head));                                            \
+       (var) && ((tvar) = SLIST_NEXT((var), field), 1); (var) = (tvar))
+
+typedef struct sckt_file_s {
+  FILE *file;
+  pthread_mutex_t mutex;
+} sckt_file_t;
 
 /**
  * @brief Registering a file descriptor succesfully received

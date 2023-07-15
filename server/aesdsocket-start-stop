@@ -8,7 +8,10 @@
 file_name=$(basename "$0")
 
 # Remove the prefix 
-process_name="${file_name:3}"
+if echo "$file_name" | grep -q "-"; then
+  file_name=$(echo "$file_name" | cut -d'-' -f1)
+fi
+process_name=$(echo "$file_name" | sed 's/^S[0-9]*//')
 
 case "$1" in
     start)

@@ -1,7 +1,6 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-// #define DEBUG
 /**
  * This structure should be dynamically allocated and passed as
  * an argument to your thread using pthread_create.
@@ -9,20 +8,20 @@
  * the joiner thread.
  */
 struct thread_data{
-  pthread_mutex_t *mutex;
-  // time in ms to sleep for obtain
-  int wait_to_get_ms;
-  // time in ms to hold a mutex
-  int wait_to_rel_ms;
+    /*
+     * TODO: add other values your thread will need to manage
+     * into this structure, use this structure to communicate
+     * between the start_thread_obtaining_mutex function and
+     * your thread implementation.
+     */
 
-  /**
-   * Set to true if the thread completed with success, false
-   * if an error occurred.
-   */
-  bool thread_complete_success;
+    /**
+     * Set to true if the thread completed with success, false
+     * if an error occurred.
+     */
+    bool thread_complete_success;
 };
 
-typedef struct thread_data thread_data_t;
 
 /**
 * Start a thread which sleeps @param wait_to_obtain_ms number of milliseconds, then obtains the

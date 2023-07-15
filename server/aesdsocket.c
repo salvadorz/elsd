@@ -36,9 +36,11 @@
  * /var/tmp/aesdsocketdata, creates this file if it doesn’t exist.
  *
  * @see https://linux.die.net/man/3/syslog
+ * @see https://linux.die.net/man/3/strftime
  */
 
 #include "aesdsocket.h"
+#include <sys/queue.h>
 
 #if SCKT_DEBUG
 #define DEBUG_LOG(MSG) fprintf(stderr, MSG)
@@ -46,9 +48,23 @@
 #define DEBUG_LOG(MSG)
 #endif
 
+#define TIMER_INTERVAL_SEC  10
+#define TIMER_INTERVAL_USEC 0
+#define TIMER_MS_TO_NSEC    1000
 
 sig_atomic_t sig_exit = 0;
 int fd_files[FD_MAX] = {0};
+
+sckt_file_t file_handle = { 0 };
+
+typedef struct sl_thread_params sl_thread_args_t;
+
+struct sl_thread_params {
+  pthread_t threadID;
+  int connctn_handle;
+  bool wrk_complete;
+  SLIST_ENTRY(sl_thread_params) next;
+};
 
 void socket_register_fd(fd_reg_t fd_reg, int fd) {
   if (FD_MAX > fd_reg) {
@@ -62,6 +78,7 @@ void socket_cleanup(int exit_code) {
       close(fd_files[i]);
     }
   }
+  fclose(file_handle.file);
   remove(SOCKET_DATA);
   closelog();
   exit(exit_code);
@@ -80,10 +97,33 @@ void signal_handler(int signal_number) {
   else if (SIGTERM == signal_number) { // finish now...
     sig_exit = TRUE;
     shutdown(fd_files[fd_sockt], SHUT_RDWR);
-    // socket_cleanup(errno_back);
   }
 
   errno = errno_back;
+}
+
+// Function to handle the timer thread
+void timer_handler(union sigval arg) {
+  int exec_ok = 0;
+  time_t currentTime = time(NULL);
+  struct tm *timeInfo = localtime(&currentTime);
+  char timestamp[64];
+  strftime(timestamp, sizeof(timestamp), "%a %b %d %y %H:%M:%S", timeInfo);
+
+  exec_ok = pthread_mutex_lock(&file_handle.mutex);
+  if (0 != exec_ok && !sig_exit) {
+    syslog(LOG_ERR, "Lock Failed!. %s", strerror(exec_ok));
+    socket_cleanup(exec_ok);
+  }
+
+  fprintf(file_handle.file, "timestamp:%s\n", timestamp);
+
+  exec_ok = pthread_mutex_unlock(&file_handle.mutex);
+  if (0 != exec_ok && !sig_exit) {
+    syslog(LOG_ERR, "Unlock Failed!. %s", strerror(exec_ok));
+    socket_cleanup(exec_ok);
+  }
+
 }
 
 void sig_handler_reg() {
@@ -96,11 +136,31 @@ void sig_handler_reg() {
   sigaction(SIGTERM, &sa, NULL);
 }
 
+void *socket_worker(void *thread_args) {
+  sl_thread_args_t *thread_params = (sl_thread_args_t *)thread_args;
+  if (NULL == thread_params)
+    pthread_exit(NULL);
+
+  int exec_ok = EXIT_SUCCESS;
+
+  if (!sig_exit && EXIT_SUCCESS == exec_ok) {
+    exec_ok = socket_connected_recv_data(thread_params->connctn_handle);
+  }
+
+  if (!sig_exit && EXIT_SUCCESS == exec_ok) {
+    exec_ok = socket_connected_send_data(thread_params->connctn_handle);
+  }
+  close(thread_params->connctn_handle);
+  thread_params->wrk_complete = true;
+
+  return NULL;
+}
+
 int socket_connected_recv_data(int client_handle) {
   int exec_ok = EXIT_SUCCESS;
 
-  // a+ append and read. If file does not exist, create
-  FILE *wrfile = fopen(SOCKET_DATA, "a+");
+  FILE *wrfile = file_handle.file;
+  
 
   if (NULL == wrfile) {
     syslog(LOG_ERR, "Failed to open the aesdsocketdata. %s", strerror(errno));
@@ -128,7 +188,21 @@ int socket_connected_recv_data(int client_handle) {
 
       // If end of transmission or Buffer full, flush to a file
       if (end_tx || BUFFER_SIZE <= bytes_used) {
+        exec_ok = pthread_mutex_lock(&file_handle.mutex);
+        if (0 != exec_ok) {
+          syslog(LOG_ERR, "Lock Failed!. %s", strerror(exec_ok));
+          close(client_handle);
+          socket_cleanup(exec_ok);
+        }
+
         int written = fwrite(buff, sizeof(char), bytes_used, wrfile);
+
+        exec_ok = pthread_mutex_unlock(&file_handle.mutex);
+        if (0 != exec_ok) {
+          syslog(LOG_ERR, "Unlock Failed!. %s", strerror(exec_ok));
+          close(client_handle);
+          socket_cleanup(exec_ok);
+        }
 
         // Could be due signal
         if (bytes_used != written) {
@@ -148,8 +222,6 @@ int socket_connected_recv_data(int client_handle) {
     DEBUG_LOG("[OK] File stored\n");
   }
 
-  fclose(wrfile);
-
   return exec_ok;
 }
 
@@ -157,7 +229,7 @@ int socket_connected_send_data(int client_handle) {
   int exec_ok = EXIT_SUCCESS;
   int rc = 0;
 
-  FILE *rdfile = fopen(SOCKET_DATA, "r");
+  FILE *rdfile = file_handle.file;
 
   if (NULL != rdfile) {
     DEBUG_LOG("[OK] Sending back\n");
@@ -184,14 +256,50 @@ int socket_connected_send_data(int client_handle) {
         }
       }
 
+      exec_ok = pthread_mutex_lock(&file_handle.mutex);
+      if (0 != exec_ok) {
+        syslog(LOG_ERR, "Lock Failed!. %s", strerror(exec_ok));
+        close(client_handle);
+        socket_cleanup(exec_ok);
+      }
+
       n_read = fread(buff, sizeof(char), BUFFER_SIZE, rdfile);
+
+      exec_ok = pthread_mutex_unlock(&file_handle.mutex);
+      if (0 != exec_ok) {
+        syslog(LOG_ERR, "Unlock Failed!. %s", strerror(exec_ok));
+        close(client_handle);
+        socket_cleanup(exec_ok);
+      }
 
     } while (0 < n_read);
 
-    fclose(rdfile);
   }
 
   return exec_ok;
+}
+
+void set_thread_timer(timer_t *tm_id) {
+
+  struct sigevent timerEvent;
+  timerEvent.sigev_notify = SIGEV_THREAD;
+  timerEvent.sigev_notify_function = timer_handler;
+  timerEvent.sigev_value.sival_ptr = NULL;
+  timerEvent.sigev_notify_attributes = NULL;
+  if (SOCKET_ERROR == timer_create(CLOCK_MONOTONIC, &timerEvent, tm_id)) {
+    perror("Error creating timer thread");
+    socket_cleanup(-1);
+  }
+
+  struct itimerspec timerSpec;
+  timerSpec.it_value.tv_sec = TIMER_INTERVAL_SEC;
+  timerSpec.it_value.tv_nsec = TIMER_INTERVAL_USEC * TIMER_MS_TO_NSEC;
+  timerSpec.it_interval.tv_sec = TIMER_INTERVAL_SEC;
+  timerSpec.it_interval.tv_nsec = TIMER_INTERVAL_USEC * TIMER_MS_TO_NSEC;
+  if (SOCKET_ERROR == timer_settime(*tm_id, TIMER_ABSTIME, &timerSpec, NULL)) {
+    perror("Error setting the timer");
+    socket_cleanup(-1);
+  }
 }
 
 /* getaddrinfo() returns a list of address structures.
@@ -326,6 +434,31 @@ int socket_start(bool daemon) {
     socket_cleanup(exec_ok);
   }
 
+  file_handle.file = fopen(SOCKET_DATA, "a+");
+  if (NULL == file_handle.file) {
+    syslog(LOG_ERR, "Failed to listen for connections. %s", strerror(errno));
+
+    exec_ok = errno;
+    socket_cleanup(exec_ok);
+  }
+  rc = pthread_mutex_init(&file_handle.mutex, NULL);
+  if (rc != 0) {
+    syslog(LOG_ERR, "Failed to initialize mutex, error: %s", strerror(rc));
+
+    exec_ok = errno;
+    socket_cleanup(exec_ok);
+  }
+
+  sl_thread_args_t *entry = NULL; //iterator
+  sl_thread_args_t *tmp = NULL;
+
+  SLIST_HEAD(list_head, sl_thread_params) head;
+
+  SLIST_INIT(&head); // head->slh_first = NULL;
+
+  timer_t timer_id;
+  set_thread_timer(&timer_id);
+
   DEBUG_LOG("[OK] Ready to listen for connections...\n");
 
   do {
@@ -354,17 +487,49 @@ int socket_start(bool daemon) {
       syslog(LOG_INFO, "Accepted connection from %s", ip_address);
     }
 
-    if (!sig_exit && EXIT_SUCCESS == exec_ok) {
-      exec_ok = socket_connected_recv_data(connection_handle);
+    entry = (sl_thread_args_t *)malloc(sizeof(sl_thread_args_t));
+    if (NULL != entry) {
+      entry->wrk_complete = false;
+      entry->connctn_handle = connection_handle;
+      SLIST_INSERT_HEAD(&head, entry, next);
+    } else {
+      syslog(LOG_ERR, "Failed to allocate thread_args");
+      socket_cleanup(-1);
     }
 
-    if (!sig_exit && EXIT_SUCCESS == exec_ok) {
-      exec_ok = socket_connected_send_data(connection_handle);
+    // Create thread per connection accepted
+    pthread_create(&entry->threadID, // pointer to thread descriptor
+                   NULL,
+                   socket_worker,  // thread function entry point
+                   (void *)(entry) // parameters to pass in
+    );
+
+    SLIST_FOREACH_SAFE(entry, &head, next, tmp) {
+      if (true == entry->wrk_complete) {
+        pthread_join(entry->threadID, NULL);
+        SLIST_REMOVE(&head, entry, sl_thread_params, next);
+        free(entry);
+      }
     }
-    close(connection_handle);
+
+    entry = NULL;
 
   } while (!sig_exit && (EXIT_SUCCESS == exec_ok));
 
+  while (!SLIST_EMPTY(&head)) {
+    entry = SLIST_FIRST(&head);
+    if (NULL != entry){
+      pthread_join(entry->threadID, NULL);
+    }
+    SLIST_REMOVE_HEAD(&head, next);
+    free(entry);
+  }
+
+  if (SOCKET_ERROR == timer_delete(timer_id)) {
+    perror("Error deleting the timer");
+  }
+
+  fclose(file_handle.file);
   close(socket_fd);
 
   return exec_ok;
