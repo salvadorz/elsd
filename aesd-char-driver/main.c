@@ -16,31 +16,50 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 #include <linux/cdev.h>
+#include <linux/slab.h> // mem alloc
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Salvador Z"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
 
-int aesd_open(struct inode *inode, struct file *filp)
-{
-    PDEBUG("open");
-    /**
-     * TODO: handle open
-     */
-    return 0;
+int aesd_open(struct inode *inode, struct file *filp) {
+  aesd_dev_t *dev;
+  PDEBUG("open");
+
+  if (!inode)
+    return -EACCES;
+  
+  dev = container_of(inode->i_cdev, aesd_dev_t, cdev);
+  filp->private_data = dev;
+
+  aesd_circular_buffer_init(&dev->cbuff);
+  dev->kbuff = NULL;
+  dev->kbuff_sz = 0;
+
+  return 0;
 }
 
 int aesd_release(struct inode *inode, struct file *filp)
 {
+    struct aesd_dev *dev;
+    struct aesd_buffer_entry *entry;
+    uint8_t index = 0;
+
     PDEBUG("release");
-    /**
-     * TODO: handle release
-     */
+
+    dev = container_of(inode->i_cdev, aesd_dev_t, cdev);
+
+    // free memory used by circular buffer
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, &dev->cbuff, index) {
+      kfree(entry->buffptr);
+    }
+    kfree(&dev->kbuff);
+
     return 0;
 }
 
@@ -102,9 +121,7 @@ int aesd_init_module(void)
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
 
-    /**
-     * TODO: initialize the AESD specific portion of the device
-     */
+    mutex_init(&aesd_device.lock);
 
     result = aesd_setup_cdev(&aesd_device);
 
