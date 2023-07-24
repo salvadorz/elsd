@@ -142,8 +142,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
            &rd_entry->buffptr[rd_entry_offset]);
     ret_copy = copy_to_user(buf, &rd_entry->buffptr[rd_entry_offset], bytes_to_copy);
   }
-  else
-    PDEBUG("Should never hit here");
   
   if (ret_copy) {
     retval = -EFAULT;
