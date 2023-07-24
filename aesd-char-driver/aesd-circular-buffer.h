@@ -30,7 +30,7 @@ struct aesd_buffer_entry
     size_t size;
 };
 
-struct aesd_circular_buffer
+typedef struct aesd_circular_buffer
 {
     /**
      * An array of pointers to memory allocated for the most recent write operations
@@ -49,7 +49,9 @@ struct aesd_circular_buffer
      * set to true when the buffer entry structure is full
      */
     bool full;
-};
+} aesd_cbuff_t;
+
+int8_t aesd_buffer_size(aesd_cbuff_t *buffer);
 
 extern struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn );
