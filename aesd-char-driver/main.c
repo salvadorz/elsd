@@ -25,11 +25,10 @@ int aesd_minor =   0;
 MODULE_AUTHOR("Salvador Z"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
-struct aesd_dev aesd_device;
+struct aesd_dev g_aesd_device;
 
 int aesd_open(struct inode *inode, struct file *filp) {
   aesd_dev_t *dev;
-  PDEBUG("open");
 
   if (!inode)
     return -EACCES;
@@ -37,28 +36,14 @@ int aesd_open(struct inode *inode, struct file *filp) {
   dev = container_of(inode->i_cdev, aesd_dev_t, cdev);
   filp->private_data = dev;
 
-  aesd_circular_buffer_init(&dev->cbuff);
-  dev->kbuff = NULL;
-  dev->kbuff_sz = 0;
-
+  PDEBUG("open");
   return 0;
 }
 
 int aesd_release(struct inode *inode, struct file *filp)
 {
-    struct aesd_dev *dev;
-    struct aesd_buffer_entry *entry;
-    uint8_t index = 0;
 
     PDEBUG("release");
-
-    dev = container_of(inode->i_cdev, aesd_dev_t, cdev);
-
-    // free memory used by circular buffer
-    AESD_CIRCULAR_BUFFER_FOREACH(entry, &dev->cbuff, index) {
-      kfree(entry->buffptr);
-    }
-    kfree(&dev->kbuff);
 
     return 0;
 }
@@ -119,11 +104,15 @@ int aesd_init_module(void)
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
     }
-    memset(&aesd_device,0,sizeof(struct aesd_dev));
+    memset(&g_aesd_device,0,sizeof(struct aesd_dev));
 
-    mutex_init(&aesd_device.lock);
+    aesd_circular_buffer_init(&g_aesd_device.cbuff);
+    mutex_init(&g_aesd_device.lock);
+    g_aesd_device.kbuff = NULL;
+    g_aesd_device.kbuff_sz = 0;
 
-    result = aesd_setup_cdev(&aesd_device);
+    result = aesd_setup_cdev(&g_aesd_device);
+    PDEBUG("Init with major %d\n", aesd_major);
 
     if( result ) {
         unregister_chrdev_region(dev, 1);
@@ -132,17 +121,26 @@ int aesd_init_module(void)
 
 }
 
-void aesd_cleanup_module(void)
-{
-    dev_t devno = MKDEV(aesd_major, aesd_minor);
+void aesd_cleanup_module(void) {
+  u8 idx = 0;
+  struct aesd_buffer_entry *entry;
 
-    cdev_del(&aesd_device.cdev);
+  dev_t devno = MKDEV(aesd_major, aesd_minor);
 
-    /**
-     * TODO: cleanup AESD specific poritions here as necessary
-     */
+  cdev_del(&g_aesd_device.cdev);
 
-    unregister_chrdev_region(devno, 1);
+  PDEBUG("cleaned");
+
+  // free memory used by circular buffer
+  AESD_CIRCULAR_BUFFER_FOREACH(entry, &g_aesd_device.cbuff, idx) {
+    if (entry->buffptr)
+      kfree(entry->buffptr);
+  }
+
+  if (g_aesd_device.kbuff)
+    kfree(g_aesd_device.kbuff);
+
+  unregister_chrdev_region(devno, 1);
 }
 
 

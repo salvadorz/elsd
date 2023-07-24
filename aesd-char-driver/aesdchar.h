@@ -11,7 +11,8 @@
 
 #include "aesd-circular-buffer.h"
 
-#define AESD_DEBUG 1  //Remove comment on this line to enable debug
+#define AESD_DEBUG 1 // Remove comment on this line to enable debug
+#define MAX_BUFFER 1024
 
 #undef PDEBUG             /* undef it, just in case */
 #ifdef AESD_DEBUG
@@ -27,11 +28,11 @@
 #endif
 
 typedef struct aesd_dev {
-  char *kbuff;
+  char  *kbuff;
   size_t kbuff_sz;
-  struct mutex lock;
-  struct aesd_circular_buffer cbuff;
   struct cdev cdev; /* Char device structure      */
-}aesd_dev_t;
+  struct mutex lock;
+  aesd_cbuff_t cbuff;
+} aesd_dev_t;
 
 #endif /* AESD_CHAR_DRIVER_AESDCHAR_H_ */
