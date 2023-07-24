@@ -11,9 +11,9 @@ else
     group="wheel"
 fi
 
-if [ -e ${module}.ko ]; then
+if [ -e /lib/modules/$(uname -r)/$module.ko ]; then
     echo "Loading local built file ${module}.ko"
-    insmod ./$module.ko $* || exit 1
+    insmod /lib/modules/$(uname -r)/$module.ko $* || exit 1
 else
     echo "Local file ${module}.ko not found, attempting to modprobe"
     modprobe ${module} || exit 1

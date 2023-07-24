@@ -3,7 +3,10 @@ module=aesdchar
 device=aesdchar
 cd `dirname $0`
 # invoke rmmod with all arguments we got
-rmmod $module || exit 1
+if [ -e /dev/$module ]; then
+    echo "Removing $module"
+    rmmod $module || exit 1
+fi
 
 # Remove stale nodes
 
