@@ -51,23 +51,204 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle read
-     */
-    return retval;
+  ssize_t retval = 0;
+  struct aesd_buffer_entry *rd_entry;
+  size_t rd_entry_offset;
+  char *k_rdbuff = NULL; //stores the commands retireved from the entries
+  u8 it;
+  u8 n_elements;
+  u64 ret_copy;
+  u64 bytes_to_copy = 0;
+  u64 bytes_in_entry;
+
+  struct aesd_dev *dev = filp->private_data;
+
+  // lock mutex before doing anything
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+
+  n_elements = aesd_buffer_size(&dev->cbuff);
+  PDEBUG("read %zu bytes with offset %ld from %d elements", count, *f_pos, n_elements);
+  if (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED < n_elements)
+    n_elements = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+  
+  // get the node from the buffer based on the given position
+  for (it = 0; it < n_elements; it++) {
+    rd_entry = aesd_circular_buffer_find_entry_offset_for_fpos(
+        &dev->cbuff, *f_pos, &rd_entry_offset);
+    if (NULL == rd_entry) {
+      if (k_rdbuff) { // buffer has nothing else
+        PDEBUG("No more elements present on the buffer, leaving the iter");
+        break;
+      } else {
+        PDEBUG("Circ buffer is empty");
+        *f_pos = 0;
+        goto release;
+      }
+    }
+
+    bytes_in_entry = rd_entry->size - rd_entry_offset;
+    if ((count <= bytes_in_entry) && (!k_rdbuff)) {
+      bytes_to_copy = count;
+      *f_pos += count;
+      // now copy to user
+      PDEBUG("Case1. offset: %ld count:%ld same as bytes_to_give:%zd",*f_pos, count, bytes_to_copy);
+      break;
+    }
+    // if asks for more than the current entry
+    else if ((NULL == k_rdbuff) && (count > bytes_in_entry)) {
+      size_t ammount = (count > MAX_BUFFER) ? MAX_BUFFER : count;
+      PDEBUG("allocating %zu bytes in kbuff", ammount);
+      k_rdbuff = kmalloc(ammount * sizeof(char), GFP_KERNEL);
+      if (!k_rdbuff) {
+        *f_pos = 0;
+        PDEBUG("Error alloc");
+        goto release;
+      }
+      strncpy(k_rdbuff, &rd_entry->buffptr[rd_entry_offset], bytes_in_entry);
+      *f_pos = bytes_in_entry + rd_entry_offset;
+      count -= bytes_in_entry;
+      bytes_to_copy = bytes_in_entry;
+      PDEBUG("Case2. offset: %ld, count:%ld, bytes_to_give:%zd", *f_pos, count, bytes_to_copy);
+      continue;
+    }
+    // keep adding to the buffer
+    else if (k_rdbuff && (count > bytes_in_entry)) {
+      strncat(k_rdbuff, &rd_entry->buffptr[rd_entry_offset], bytes_in_entry);
+      count  -= bytes_in_entry;
+      *f_pos += bytes_in_entry + rd_entry_offset;
+      bytes_to_copy += bytes_in_entry;
+      PDEBUG("Case3. offset: %ld, count:%ld, bytes_to_give:%zd", *f_pos, count,
+             bytes_to_copy);
+      continue;
+    }
+    // count is less than entry and/or buffer will be full
+    else {
+
+      strncat(k_rdbuff, &rd_entry->buffptr[rd_entry_offset], count);
+      *f_pos += count;
+      bytes_to_copy += count;
+      break;
+    }
+  }
+
+  if (k_rdbuff) {
+    PDEBUG(" Sending %zd bytes and offset:%ld with:%s", bytes_to_copy, *f_pos, k_rdbuff);
+    ret_copy = copy_to_user(buf, k_rdbuff, bytes_to_copy);
+    kfree(k_rdbuff);
+  } else if (rd_entry) {
+    PDEBUG(" Sending %zd bytes and offset:%ld with:%s", bytes_to_copy, *f_pos,
+           &rd_entry->buffptr[rd_entry_offset]);
+    ret_copy = copy_to_user(buf, &rd_entry->buffptr[rd_entry_offset], bytes_to_copy);
+  }
+  else
+    PDEBUG("Should never hit here");
+  
+  if (ret_copy) {
+    retval = -EFAULT;
+    goto release;
+  }
+
+  // update return value to number of bytes read
+  retval = bytes_to_copy;
+
+// release mutex, always
+release:
+  mutex_unlock(&dev->lock);
+
+  return retval;
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    ssize_t retval = -ENOMEM;
-    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle write
-     */
-    return retval;
+  ssize_t retval = -ENOMEM;
+  size_t idx;
+  size_t bytes_not_copied = 0;
+  bool nl_found = false;
+  struct aesd_buffer_entry wr_entry;
+
+  aesd_dev_t * const dev = filp->private_data;
+
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  // attempt to allocate enough buffer space for data, if the last command
+  // didn't finish, get more memory
+  if (dev->kbuff) {
+    char *holding_old_ref = dev->kbuff;
+    dev->kbuff = kmalloc(dev->kbuff_sz + count, GFP_KERNEL);
+    if (dev->kbuff) {
+      memcpy(dev->kbuff, holding_old_ref, dev->kbuff_sz);
+      kfree(holding_old_ref);
+    }
+  }
+  // empty kbuff
+  else {
+    dev->kbuff = kmalloc(dev->kbuff_sz + count, GFP_KERNEL);
+  }
+
+  if (!dev->kbuff) {
+    PDEBUG("Failure to allocate enough memory in aesd_write");
+    retval = -ENOMEM;
+    goto release_mutex;
+  }
+
+  // copy data to kernel space
+  bytes_not_copied = copy_from_user(&dev->kbuff[dev->kbuff_sz], buf, count);
+  dev->kbuff_sz += count;
+  if (0 < bytes_not_copied) {
+    // failed to copy all of the user buffer
+    PDEBUG("Failure to copy %ld bytes from user in aesd_write",
+           bytes_not_copied);
+    retval = -EFAULT;
+    goto free_mem;
+  }
+
+  retval = count;
+
+  // check the the entry for a newline
+  for (idx = 0; idx < dev->kbuff_sz; ++idx) {
+    if ('\n' == dev->kbuff[idx]) {
+      PDEBUG("Found newline in command");
+      nl_found = true;
+    }
+  }
+
+  // add entry to circular buffer if the newline was found, otherwise release
+  // mutex and move on
+  if (nl_found) {
+    PDEBUG("Adding entry %s to circular buffer, length %zu",dev->kbuff, idx);
+    // if full, then free the oldest prior to override
+    if (dev->cbuff.full) {
+      PDEBUG("Buffer was full, freeing oldest entry");
+      kfree(dev->cbuff.entry[dev->cbuff.out_offs].buffptr);
+    }
+    wr_entry.buffptr = dev->kbuff;
+    wr_entry.size = idx;
+    aesd_circular_buffer_add_entry(&dev->cbuff, &wr_entry);
+
+  } else
+    goto release_mutex;
+  
+  goto release_ptr;
+
+// free any allocated memory, in error cases
+free_mem:
+  kfree(dev->kbuff);
+release_ptr:
+  dev->kbuff = NULL; // avoid wild pointer
+  dev->kbuff_sz = 0;
+
+// release mutex, always
+release_mutex:
+  mutex_unlock(&dev->lock);
+  PDEBUG("wrote %zu bytes with offset %lld, elements written %d", retval, *f_pos, aesd_buffer_size(&dev->cbuff));
+  /**
+   * TODO: handle write
+   */
+  return retval;
 }
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
