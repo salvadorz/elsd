@@ -16,7 +16,9 @@
 #include <time.h>
 #include <unistd.h>   /* close, fork*/
 
-#define SOCKET_DATA ("/var/tmp/aesdsocketdata")
+#define USE_KDEVICE (true)
+#define SOCKET_KDEV ("/dev/aesdchar")
+#define SOCKET_FILE ("/var/tmp/aesdsocketdata")
 #define SOCKET_PORT ("9000") /*PORT NUMBER TO LISTEN*/
 #define BUFFER_SIZE (1024U)  /*BUFFER SIZE to handle stream*/
 #define SOCKET_MAX  (10U)     /*Socket MAX connections*/
@@ -24,6 +26,12 @@
 #define SCKT_MAX_ARG (2U)
 #define SCKT_NO_ARGS (1U)
 #define TRUE         (1)
+
+#if (USE_KDEVICE)
+#define SOCKET_DATA SOCKET_KDEV
+#else
+#define SOCKET_DATA SOCKET_FILE
+#endif
 
 typedef struct addrinfo *addrinfo_handle_t;
 
