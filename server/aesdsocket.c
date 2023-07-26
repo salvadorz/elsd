@@ -43,9 +43,9 @@
 #include <sys/queue.h>
 
 #if SCKT_DEBUG
-#define DEBUG_LOG(MSG) fprintf(stderr, MSG)
+#define DEBUG_LOG(fmt, args...) fprintf(stderr, fmt , ##args)
 #else
-#define DEBUG_LOG(MSG)
+#define DEBUG_LOG(fmt, args...)
 #endif
 
 #define TIMER_INTERVAL_SEC  10
@@ -78,8 +78,10 @@ void socket_cleanup(int exit_code) {
       close(fd_files[i]);
     }
   }
+#if (!USE_KDEVICE)
   fclose(file_handle.file);
   remove(SOCKET_DATA);
+#endif
   closelog();
   exit(exit_code);
 }
@@ -158,7 +160,9 @@ void *socket_worker(void *thread_args) {
 
 int socket_connected_recv_data(int client_handle) {
   int exec_ok = EXIT_SUCCESS;
-
+#if (USE_KDEVICE)
+  file_handle.file = fopen(SOCKET_DATA, "a+");
+#endif
   FILE *wrfile = file_handle.file;
   
 
@@ -206,6 +210,7 @@ int socket_connected_recv_data(int client_handle) {
 
         // Could be due signal
         if (bytes_used != written) {
+          DEBUG_LOG("Socket-written %d instead of %d\n", written, bytes_used);
           if (EOF == written) {
             syslog(LOG_ERR, "Write Failed!. %s", strerror(errno));
             exec_ok = errno;
@@ -233,7 +238,9 @@ int socket_connected_send_data(int client_handle) {
 
   if (NULL != rdfile) {
     DEBUG_LOG("[OK] Sending back\n");
+#if (!USE_KDEVICE) // Not implemented on k module
     rc = fseek(rdfile, 0, SEEK_SET);
+#endif
     if (SOCKET_ERROR == rc) {
       syslog(LOG_ERR, "Write Failed!. %s", strerror(errno));
       exec_ok = errno;
@@ -275,7 +282,9 @@ int socket_connected_send_data(int client_handle) {
     } while (0 < n_read);
 
   }
-
+#if (USE_KDEVICE)
+  fclose(rdfile);
+#endif
   return exec_ok;
 }
 
@@ -433,14 +442,15 @@ int socket_start(bool daemon) {
     exec_ok = errno;
     socket_cleanup(exec_ok);
   }
-
+  #if (!USE_KDEVICE)
   file_handle.file = fopen(SOCKET_DATA, "a+");
   if (NULL == file_handle.file) {
-    syslog(LOG_ERR, "Failed to listen for connections. %s", strerror(errno));
+    syslog(LOG_ERR, "Failed to open the file. %s", strerror(errno));
 
     exec_ok = errno;
     socket_cleanup(exec_ok);
   }
+  #endif
   rc = pthread_mutex_init(&file_handle.mutex, NULL);
   if (rc != 0) {
     syslog(LOG_ERR, "Failed to initialize mutex, error: %s", strerror(rc));
@@ -456,8 +466,10 @@ int socket_start(bool daemon) {
 
   SLIST_INIT(&head); // head->slh_first = NULL;
 
+#if (!USE_KDEVICE)
   timer_t timer_id;
   set_thread_timer(&timer_id);
+#endif
 
   DEBUG_LOG("[OK] Ready to listen for connections...\n");
 
@@ -524,12 +536,13 @@ int socket_start(bool daemon) {
     SLIST_REMOVE_HEAD(&head, next);
     free(entry);
   }
-
+#if (!USE_KDEVICE)
   if (SOCKET_ERROR == timer_delete(timer_id)) {
     perror("Error deleting the timer");
   }
 
   fclose(file_handle.file);
+#endif
   close(socket_fd);
 
   return exec_ok;
@@ -541,7 +554,7 @@ int main(int argc, char **argv) {
   /**
    * Setup syslog logging with process name using the LOG_USER facility.
    */
-   openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
+   //openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
 
   /** 1.2
    * -d argument which runs the aesdsocket application as a daemon.
@@ -557,7 +570,9 @@ int main(int argc, char **argv) {
     sig_handler_reg();
     return_val = socket_start(false);
   }
+#if (!USE_KDEVICE)
   remove(SOCKET_DATA);
+#endif
   fprintf(stderr, "Ending %s from main with code %d....\n", basename(argv[0]),
           return_val);
 

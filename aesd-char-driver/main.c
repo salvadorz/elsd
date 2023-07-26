@@ -57,7 +57,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
   char *k_rdbuff = NULL; //stores the commands retireved from the entries
   u8 it;
   u8 n_elements;
-  u64 ret_copy;
+  u64 ret_copy = 0;
   u64 bytes_to_copy = 0;
   u64 bytes_in_entry;
 
@@ -72,11 +72,12 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
   PDEBUG("read %zu bytes offset %ld elements:%d", count, *f_pos, n_elements);
   if (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED < n_elements)
     n_elements = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-  
+
   // get the node from the buffer based on the given position
   for (it = 0; it < n_elements; it++) {
     rd_entry = aesd_circular_buffer_find_entry_offset_for_fpos(
         &dev->cbuff, *f_pos, &rd_entry_offset);
+
     if (NULL == rd_entry) {
       if (k_rdbuff) { // buffer has nothing else
         //PDEBUG("No more elements present on the buffer, leaving the iter");
@@ -135,17 +136,18 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
   }
 
-  if (k_rdbuff) {
+  if (bytes_to_copy && k_rdbuff) {
     PDEBUG("1 Sending %zd bytes and offset:%ld with:%s", bytes_to_copy, *f_pos, k_rdbuff);
     ret_copy = copy_to_user(buf, k_rdbuff, bytes_to_copy);
     kfree(k_rdbuff);
-  } else if (rd_entry) {
+  } else if (bytes_to_copy && rd_entry) {
     PDEBUG("2 Sending %zd bytes and offset:%ld with:%s", bytes_to_copy, *f_pos,
            &rd_entry->buffptr[rd_entry_offset]);
     ret_copy = copy_to_user(buf, &rd_entry->buffptr[rd_entry_offset], bytes_to_copy);
   }
-  
+
   if (ret_copy) {
+    PDEBUG("fault");
     retval = -EFAULT;
     goto release;
   }

@@ -11,7 +11,7 @@
 
 #include "aesd-circular-buffer.h"
 
-#define AESD_DEBUG 1 // Remove comment on this line to enable debug
+//#define AESD_DEBUG 1 // Remove comment on this line to enable debug
 #define MAX_BUFFER 1024
 
 #undef PDEBUG             /* undef it, just in case */
