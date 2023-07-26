@@ -17,6 +17,21 @@
 #include "aesd-circular-buffer.h"
 
 /**
+ * @brief Provides the number of current elements present in the circular buffer
+ * 
+ * @param buffer 
+ * @return number of elements 
+ */
+int8_t aesd_buffer_size(struct aesd_circular_buffer *buffer) {
+  int8_t size = buffer->in_offs - buffer->out_offs;
+
+  if (0 >= size && buffer->full)
+    size += AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+  return size;
+}
+
+/**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced
  *      character index if all buffer strings were concatenated end to end
@@ -36,12 +51,11 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
       return NULL;
     struct aesd_buffer_entry *ret_val = NULL;
 
-    uint8_t size = buffer->in_offs - buffer->out_offs;
-    if (0 >= size)
-      size += AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    int8_t n_elem = aesd_buffer_size(buffer);
 
     size_t count = 0;
-    for (int i = 0; i < size; ++i) {
+    int i;
+    for (i = 0; i < n_elem; ++i) {
       uint8_t offset = (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
       count += buffer->entry[offset].size;
