@@ -1,0 +1,13 @@
+#!/bin/sh
+module=aesdchar
+device=aesdchar
+cd `dirname $0`
+# invoke rmmod with all arguments we got
+if [ -e /dev/$module ]; then
+    echo "Removing $module"
+    rmmod $module || exit 1
+fi
+
+# Remove stale nodes
+
+rm -f /dev/${device}

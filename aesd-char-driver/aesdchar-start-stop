@@ -1,0 +1,26 @@
+#!/bin/sh
+# Author: Salvador Zendejas
+
+file_name=$(basename "$0")
+
+# Remove the prefix 
+if echo "$file_name" | grep -q "-"; then
+  file_name=$(echo "$file_name" | cut -d'-' -f1)
+fi
+module_name=$(echo "$file_name" | sed 's/^S[0-9]*//')
+
+case "$1" in
+    start)
+        echo "Loading $module_name in the kernel"
+        ${module_name}_load
+        ;;
+    stop)
+        echo "Unloading Kernel Module $module_name"
+        ${module_name}_unload
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+esac
+
+exit 0
