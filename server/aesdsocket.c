@@ -41,6 +41,9 @@
 
 #include "aesdsocket.h"
 #include <sys/queue.h>
+#if USE_KDEVICE
+#include "aesd_ioctl.h"
+#endif
 
 #if SCKT_DEBUG
 #define DEBUG_LOG(fmt, args...) fprintf(stderr, fmt , ##args)
@@ -199,7 +202,26 @@ int socket_connected_recv_data(int client_handle) {
           socket_cleanup(exec_ok);
         }
 
-        int written = fwrite(buff, sizeof(char), bytes_used, wrfile);
+        int written = 0;
+#if USE_KDEVICE
+        if (NULL != strstr(buff, SOCKET_SEEK)) { // If seek command
+          // AESDCHAR_IOCSEEKTO:X,Y
+          int fd_scktdrv = fileno(wrfile);
+          char *seek_tkn = strtok(buff, ":"); // returns X,Y
+          char *str_cmd  = strtok(NULL, ","); // Continue tokenizing
+          char *str_off  = strtok(NULL, ","); // Continue tokenizing
+          struct aesd_seekto seekto;
+          seekto.write_cmd = atoi(str_cmd);
+          seekto.write_cmd_offset = atoi(str_off);
+          DEBUG_LOG("Sending Seekto cmd %d and offset %d\n", seekto.write_cmd,
+                    seekto.write_cmd_offset);
+          ioctl(fd_scktdrv, AESDCHAR_IOCSEEKTO, &seekto);
+          written = bytes_used; // To avoid error handling
+        } else
+          written = fwrite(buff, sizeof(char), bytes_used, wrfile);
+#else
+        written = fwrite(buff, sizeof(char), bytes_used, wrfile);
+#endif
 
         exec_ok = pthread_mutex_unlock(&file_handle.mutex);
         if (0 != exec_ok) {
@@ -554,7 +576,7 @@ int main(int argc, char **argv) {
   /**
    * Setup syslog logging with process name using the LOG_USER facility.
    */
-   //openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
+   openlog(argv[0], (LOG_ODELAY | LOG_PERROR), LOG_USER);
 
   /** 1.2
    * -d argument which runs the aesdsocket application as a daemon.

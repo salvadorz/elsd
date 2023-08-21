@@ -12,7 +12,7 @@ endif
 
 LIBS ?= -lpthread -lrt
 LDFLAGS ?= $(LIBS)
-
+INCLUDES = -I../aesd-char-driver
 SRC := aesdsocket.c
 TARGET = aesdsocket
 OBJS := $(SRC:.c=.o)
@@ -24,3 +24,9 @@ $(TARGET) : $(OBJS)
 
 clean:
 	$(RM) *.o $(TARGET) *.elf *.map
+
+
+depend:
+
+.c.o:
+	$(CC) $(CFLAGS) $(INCLUDES) -c $<

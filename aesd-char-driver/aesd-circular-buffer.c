@@ -25,12 +25,95 @@
 int8_t aesd_buffer_size(struct aesd_circular_buffer *buffer) {
   int8_t size = buffer->in_offs - buffer->out_offs;
 
-  if (0 >= size && buffer->full)
+  if (0 > size || (0 == size && buffer->full))
     size += AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
   return size;
 }
 
+/**
+ * @brief Return the total sum of all data elements in the buffer
+ * 
+ * @param buffer 
+ * @return total size_t from all elements 
+ */
+size_t aesd_circular_buffer_data_length(aesd_cbuff_t *buffer) {
+  size_t length = 0;
+
+  if (NULL != buffer){
+
+    int8_t n_elem = aesd_buffer_size(buffer);
+
+    int i;
+    for (i = 0; i < n_elem; ++i) {
+      uint8_t offset =
+          (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+      length += buffer->entry[offset].size;
+
+    }
+  }
+  return length;
+}
+
+/**
+ * @brief Returns the base offset from the head (out_offs). Assumtion: caller
+ * already valided with `aesd_circular_buffer_is_valid_seekto`
+ *
+ * @param buffer
+ * @param wr_cmd
+ * @param wr_cmd_offset
+ * @return size_t
+ */
+size_t aesd_circular_buffer_base_offset(aesd_cbuff_t *buffer, uint32_t const wr_cmd,
+                                        uint32_t const wr_cmd_offset) {
+  size_t base_offset = 0;
+
+  if (NULL != buffer) {
+
+    int8_t const n_elem = aesd_buffer_size(buffer);
+    if (n_elem < wr_cmd)
+      return 0L;
+
+    int i;
+    for (i = 0; i < n_elem; ++i) {
+      uint8_t cmd_offset =
+          (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+      if (wr_cmd == i) {
+        base_offset += wr_cmd_offset;
+        break;
+      }
+      base_offset += buffer->entry[cmd_offset].size;
+    }
+  }
+  return base_offset;
+}
+
+/**
+ * @brief Check if the cmd and offset are within a valid "range"
+ *
+ * @param buffer
+ * @param wr_cmd cmd offset from the current head (out_offs)
+ * @param wr_cmd_offset from the wr_cmd element
+ * @return true if valid, false otherwise.
+ */
+bool aesd_circular_buffer_is_valid_seekto(aesd_cbuff_t *buffer, uint32_t wr_cmd,
+                                          uint32_t wr_cmd_offset) {
+  bool is_valid = false;
+
+  if (NULL != buffer) {
+
+    int8_t const n_elem = aesd_buffer_size(buffer);
+
+    if (n_elem >= wr_cmd) {
+      uint8_t offset =
+          (buffer->out_offs + wr_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+      is_valid = (wr_cmd_offset <= buffer->entry[offset].size) ? true : false;
+    }
+  }
+  return is_valid;
+}
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced

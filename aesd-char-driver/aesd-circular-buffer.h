@@ -51,7 +51,15 @@ typedef struct aesd_circular_buffer
     bool full;
 } aesd_cbuff_t;
 
+bool aesd_circular_buffer_is_valid_seekto(aesd_cbuff_t *buffer, uint32_t wr_cmd,
+                                          uint32_t wr_cmd_offset);
+
 int8_t aesd_buffer_size(aesd_cbuff_t *buffer);
+
+size_t aesd_circular_buffer_data_length(aesd_cbuff_t *buffer);
+
+size_t aesd_circular_buffer_base_offset(aesd_cbuff_t *buffer, uint32_t wr_cmd,
+                                        uint32_t wr_cmd_offset);
 
 extern struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn );

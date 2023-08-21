@@ -19,10 +19,11 @@
 #include <linux/slab.h> // mem alloc
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Salvador Z"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Salvador Z");
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev g_aesd_device;
@@ -108,7 +109,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         goto release;
       }
       memcpy(k_rdbuff, &rd_entry->buffptr[rd_entry_offset], bytes_in_entry);
-      *f_pos = bytes_in_entry + rd_entry_offset;
+      *f_pos += bytes_in_entry;
       count -= bytes_in_entry;
       bytes_to_copy = bytes_in_entry;
       PDEBUG("C2. offset: %ld, count:%ld, bytes_to_give:%zd and entry %ld",
@@ -119,7 +120,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     else if (k_rdbuff && (count > bytes_in_entry)) {
       strncat(k_rdbuff, &rd_entry->buffptr[rd_entry_offset], bytes_in_entry);
       count  -= bytes_in_entry;
-      *f_pos += bytes_in_entry + rd_entry_offset;
+      *f_pos += bytes_in_entry;
       bytes_to_copy += bytes_in_entry;
       PDEBUG("C3. offset: %ld, count:%ld, bytes_to_give:%zd rd_ofsset:%ld", *f_pos, count,
              bytes_to_copy, rd_entry_offset);
@@ -179,7 +180,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
   // didn't finish, get more memory
   if (dev->kbuff) {
     char *holding_old_ref = dev->kbuff;
-    dev->kbuff = kzalloc(dev->kbuff_sz + count, GFP_KERNEL);
+    dev->kbuff = kzalloc(dev->kbuff_sz + count + 1, GFP_KERNEL);
     if (dev->kbuff) {
       memcpy(dev->kbuff, holding_old_ref, dev->kbuff_sz);
       kfree(holding_old_ref);
@@ -187,7 +188,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
   }
   // empty kbuff
   else {
-    dev->kbuff = kzalloc(dev->kbuff_sz + count, GFP_KERNEL);
+    dev->kbuff = kzalloc(dev->kbuff_sz + count + 1, GFP_KERNEL);
   }
 
   if (!dev->kbuff) {
@@ -198,6 +199,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
   // copy data to kernel space
   PDEBUG("Got %d bytes, size %d", count, dev->kbuff_sz);
+  // Not required, only to habe better debug for the %s printing
+  dev->kbuff[dev->kbuff_sz + count] = '\0';
   bytes_not_copied = copy_from_user(&dev->kbuff[dev->kbuff_sz], buf, count);
   dev->kbuff_sz += count;
   if (0 < bytes_not_copied) {
@@ -249,12 +252,70 @@ release_mutex:
    */
   return retval;
 }
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence) {
+  loff_t cbuf_length;
+  loff_t retval = -EINVAL;
+  struct aesd_dev *dev = filp->private_data;
+
+  PDEBUG("seek to offset %lld, whence %d", offset, whence);
+
+  // lock mutex
+  if (mutex_lock_interruptible(&dev->lock))
+    return -ERESTARTSYS;
+
+  cbuf_length = aesd_circular_buffer_data_length(&dev->cbuff);
+
+  // use fixed size llseek
+  retval = fixed_size_llseek(filp, offset, whence, cbuf_length);
+  PDEBUG("fixed size llseek returned: %lld with data len %lld", retval, cbuf_length);
+
+release_mutex:
+  mutex_unlock(&dev->lock);
+
+  return retval;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+  long retval = 0;
+
+  switch (cmd) {
+  case AESDCHAR_IOCSEEKTO: {
+    struct aesd_seekto seekto;
+    if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto))) {
+      retval = -EFAULT;
+    } else {
+      struct aesd_dev *dev = filp->private_data;
+
+      if (!aesd_circular_buffer_is_valid_seekto(&dev->cbuff, seekto.write_cmd,
+                                                seekto.write_cmd_offset))
+        return -EINVAL;
+      filp->f_pos = aesd_circular_buffer_base_offset(
+          &dev->cbuff, seekto.write_cmd, seekto.write_cmd_offset);
+      PDEBUG("ioctl adjusted f_pos %ld based on cmd %d with offset %d",
+             filp->f_pos, seekto.write_cmd, seekto.write_cmd_offset);
+      if (0 == filp->f_pos && (seekto.write_cmd || seekto.write_cmd_offset))
+        return -EFAULT;
+    }
+    break;
+  }
+
+  default: {
+    // cmd not implemented of do no belong to this driver
+    retval = -ENOTTY;
+    break;
+  }
+  } /*end of switch*/
+  return retval;
+}
 struct file_operations aesd_fops = {
-    .owner =    THIS_MODULE,
-    .read =     aesd_read,
-    .write =    aesd_write,
-    .open =     aesd_open,
-    .release =  aesd_release,
+    .owner          = THIS_MODULE,
+    .read           = aesd_read,
+    .write          = aesd_write,
+    .open           = aesd_open,
+    .release        = aesd_release,
+    .llseek         = aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

@@ -17,6 +17,7 @@
 #include <unistd.h>   /* close, fork*/
 
 #define USE_KDEVICE (true)
+#define SOCKET_SEEK ("AESDCHAR_IOCSEEKTO:")
 #define SOCKET_KDEV ("/dev/aesdchar")
 #define SOCKET_FILE ("/var/tmp/aesdsocketdata")
 #define SOCKET_PORT ("9000") /*PORT NUMBER TO LISTEN*/
